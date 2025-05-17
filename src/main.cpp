@@ -9,8 +9,6 @@
 #include "driver/mcpwm.h"
 #include "soc/mcpwm_struct.h" 
 #include "soc/mcpwm_reg.h"
-#include "Wire.h"
-#include "DFRobot_VL53L0X.h"
 
 
 DFRobot_AXP313A axp;
@@ -65,156 +63,275 @@ uint8_t Speed = 30;
 
 const char* htmlHomePage PROGMEM = R"HTMLHOMEPAGE(
 <!DOCTYPE html>
-<html>
+<html lang="de">
   <head>
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <title>Remote Car Control</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet" />
+    <!-- NippleJS: virtual joystick -->
+    <script defer src="https://cdn.jsdelivr.net/npm/nipplejs@0.9.0/dist/nipplejs.min.js"></script>
+
     <style>
-    .arrows {
-      font-size:30px;
-      color:red;
-    }
-    td.button {
-      background-color:black;
-      border-radius:25%;
-      box-shadow: 5px 5px #888888;
-    }
-    td.button:active {
-      transform: translate(5px,5px);
-      box-shadow: none; 
-    }
+      :root {
+        --primary: #ff3b30;
+        --bg: #111;
+        --surface: #1f1f1f;
+        --text: #fafafa;
+      }
 
-    .noselect {
-      -webkit-touch-callout: none; /* iOS Safari */
-        -webkit-user-select: none; /* Safari */
-         -khtml-user-select: none; /* Konqueror HTML */
-           -moz-user-select: none; /* Firefox */
-            -ms-user-select: none; /* Internet Explorer/Edge */
-                user-select: none; /* Non-prefixed version, currently
-                                      supported by Chrome and Opera */
-    }
+      * {
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
+      }
 
-    .slidecontainer {
-      width: 100%;
-    }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: "Roboto", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        height: 100%;
+        overscroll-behavior: contain; /* stop pull‑to‑refresh killing controls */
+      }
 
-    .slider {
-      -webkit-appearance: none;
-      width: 100%;
-      height: 15px;
-      border-radius: 5px;
-      background: #d3d3d3;
-      outline: none;
-      opacity: 0.7;
-      -webkit-transition: .2s;
-      transition: opacity .2s;
-    }
+      .wrapper {
+        width: 92vw;
+        max-width: 560px;
+        margin: 0 auto;
+        padding-top: 2vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2.2rem;
+      }
 
-    .slider:hover {
-      opacity: 1;
-    }
+      .camera-feed {
+        width: 100%;
+        aspect-ratio: 16/9;
+        max-height: 48vh;
+        object-fit: cover;
+        border-radius: 16px;
+        box-shadow: 0 12px 24px rgba(0, 0, 0, 0.6);
+        background: #000;
+      }
 
-    .slider::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 25px;
-      height: 25px;
-      border-radius: 50%;
-      background: red;
-      cursor: pointer;
-    }
+      .controls {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2.4rem;
+        width: 100%;
+      }
 
-    .slider::-moz-range-thumb {
-      width: 25px;
-      height: 25px;
-      border-radius: 50%;
-      background: red;
-      cursor: pointer;
-    }
+      /* ---------------- Joystick ---------------- */
+      #joystickContainer {
+        width: 180px;
+        height: 180px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 30% 30%, #2d2d2d 0%, #1a1a1a 70%);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
+        position: relative;
+        touch-action: none;
+        user-select: none;
+      }
+      #joystickContainer.hidden { display: none; }
 
+      #joystickContainer.active::after {
+        content: "";
+        position: absolute;
+        inset: -8px;
+        border-radius: 50%;
+        border: 4px solid var(--primary);
+        animation: pulse 1s ease-out infinite;
+      }
+      @keyframes pulse {
+        0% { opacity: 0.8; transform: scale(1); }
+        100% { opacity: 0; transform: scale(1.4); }
+      }
+
+      /* ---------------- Arrow Pad ---------------- */
+      #arrowPad {
+        display: grid;
+        grid-template-columns: repeat(3, 72px);
+        grid-template-rows: repeat(3, 72px);
+        gap: 14px;
+        touch-action: none;
+        user-select: none;
+      }
+      #arrowPad.hidden { display: none; }
+
+      .arrow-button {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-size: 30px;
+        font-weight: 700;
+        border-radius: 50%;
+        background: var(--surface);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        transition: transform 0.1s, box-shadow 0.1s;
+      }
+      .arrow-button:active {
+        transform: translateY(2px);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+      }
+
+      /* ---------------- Slider ---------------- */
+      .slider-container {
+        width: 100%;
+        max-width: 420px;
+      }
+      .slider-container label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 700;
+        font-size: 1.1rem;
+      }
+      input[type="range"] {
+        -webkit-appearance: none;
+        width: 100%;
+        height: 14px;
+        border-radius: 7px;
+        background: #444;
+        outline: none;
+      }
+      input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: var(--primary);
+        cursor: pointer;
+        box-shadow: 0 0 12px var(--primary);
+        transition: transform 0.15s ease-out;
+      }
+      input[type="range"]::-webkit-slider-thumb:active { transform: scale(0.9); }
+      input[type="range"]::-moz-range-thumb {
+        width: 32px; height: 32px; border-radius: 50%; background: var(--primary); cursor: pointer; border: none; box-shadow: 0 0 12px var(--primary);
+      }
     </style>
-
   </head>
-  <body class="noselect" align="center" style="background-color:white">
-    <table id="mainTable" style="width:400px;margin:auto;table-layout:fixed" CELLSPACING=10>
-      <tr>
-        <img id="cameraImage" src="" style="width:400px;height:250px"></td>
-      </tr> 
-      <tr>
-        <td></td>
-        <td class="button" ontouchstart='sendButtonInput("MoveCar","1")' ontouchend='sendButtonInput("MoveCar","0")'><span class="arrows" >forward</span></td>
-        <td></td>
-      </tr>
-      <tr>
-        <td class="button" ontouchstart='sendButtonInput("MoveCar","3")' ontouchend='sendButtonInput("MoveCar","0")'><span class="arrows" >left</span></td>
-        <td class="button"></td>    
-        <td class="button" ontouchstart='sendButtonInput("MoveCar","4")' ontouchend='sendButtonInput("MoveCar","0")'><span class="arrows" >right</span></td>
-      </tr>
-      <tr>
-        <td></td>
-        <td class="button" ontouchstart='sendButtonInput("MoveCar","2")' ontouchend='sendButtonInput("MoveCar","0")'><span class="arrows" >back</span></td>
-        <td></td>
-      </tr>
-      <tr/><tr/>
-      <tr>
-        <td style="text-align:left"><b>Speed:</b></td>
-        <td colspan=2>
-         <div class="slidecontainer">
-            <input type="range" min="0" max="100" value="50" class="slider" id="Speed" oninput='sendButtonInput("Speed",value)'>
-          </div>
-        </td>
-      </tr>        
+  <body>
+    <div class="wrapper">
+      <img id="cameraImage" class="camera-feed" src="" alt="Live Camera" />
 
-    </table>
+      <div class="controls">
+        <div id="joystickContainer"></div>
+
+        <div id="arrowPad" class="hidden">
+          <div></div>
+          <div class="arrow-button" data-dir="1">▲</div>
+          <div></div>
+          <div class="arrow-button" data-dir="3">◀</div>
+          <div></div>
+          <div class="arrow-button" data-dir="4">▶</div>
+          <div></div>
+          <div class="arrow-button" data-dir="2">▼</div>
+          <div></div>
+        </div>
+
+        <div class="slider-container">
+          <label for="Speed">Geschwindigkeit</label>
+          <input type="range" min="0" max="100" value="50" id="Speed" oninput="sendButtonInput('Speed', this.value)" />
+        </div>
+      </div>
+    </div>
 
     <script>
-      var webSocketCameraUrl = "ws:\/\/" + window.location.hostname + "/Camera";
-      var webSocketCarInputUrl = "ws:\/\/" + window.location.hostname + "/CarInput";      
-      var websocketCamera;
-      var websocketCarInput;
+      /* ---------------- WebSockets ---------------- */
+      const camURL = `ws://${location.hostname}/Camera`;
+      const ctrlURL = `ws://${location.hostname}/CarInput`;
+      let wsCam, wsCtrl;
 
-      function initCameraWebSocket() 
-      {
-        websocketCamera = new WebSocket(webSocketCameraUrl);
-        websocketCamera.binaryType = 'blob';
-        websocketCamera.onopen    = function(event){};
-        websocketCamera.onclose   = function(event){setTimeout(initCameraWebSocket, 2000);};
-        websocketCamera.onmessage = function(event)
-        {
-          var imageId = document.getElementById("cameraImage");
-          imageId.src = URL.createObjectURL(event.data);
-        };
+      function initSockets() {
+        wsCam = new WebSocket(camURL);
+        wsCam.binaryType = 'blob';
+        wsCam.onmessage = e => (document.getElementById('cameraImage').src = URL.createObjectURL(e.data));
+        wsCam.onclose = () => setTimeout(initSockets, 2000);
+
+        wsCtrl = new WebSocket(ctrlURL);
+        wsCtrl.onopen = () => sendButtonInput('Speed', document.getElementById('Speed').value);
+        wsCtrl.onclose = () => setTimeout(initSockets, 2000);
       }
 
-      function initCarInputWebSocket() 
-      {
-        websocketCarInput = new WebSocket(webSocketCarInputUrl);
-        websocketCarInput.onopen    = function(event)
-        {
-          sendButtonInput("Speed", document.getElementById("Speed").value);
-
-        };
-        websocketCarInput.onclose   = function(event){setTimeout(initCarInputWebSocket, 2000);};
-        websocketCarInput.onmessage = function(event){};        
+      function sendButtonInput(key, val) {
+        if (wsCtrl?.readyState === WebSocket.OPEN) wsCtrl.send(`${key},${val}`);
       }
 
-      function initWebSocket() 
-      {
-        initCameraWebSocket ();
-        initCarInputWebSocket();
+      /* ---------------- Joystick OR Arrow Pad ---------------- */
+      const joystickDiv = document.getElementById('joystickContainer');
+      const arrowPad = document.getElementById('arrowPad');
+
+      function enableArrowPad() {
+        joystickDiv.classList.add('hidden');
+        arrowPad.classList.remove('hidden');
       }
 
-      function sendButtonInput(key, value) 
-      {
-        var data = key + "," + value;
-        websocketCarInput.send(data);
+      function setupArrowPadEvents() {
+        arrowPad.querySelectorAll('.arrow-button').forEach(btn => {
+          btn.addEventListener('touchstart', () => sendButtonInput('MoveCar', btn.dataset.dir));
+          btn.addEventListener('touchend',   () => sendButtonInput('MoveCar', '0'));
+        });
       }
 
-      window.onload = initWebSocket;
-      document.getElementById("mainTable").addEventListener("touchend", function(event){
-        event.preventDefault()
-      });      
+      function setupJoystick() {
+        try {
+          const manager = nipplejs.create({
+            zone: joystickDiv,
+            mode: 'static',
+            color: 'var(--primary)',
+            size: 160,
+            position: { left: '50%', top: '50%' },
+            restJoystick: true,
+            multitouch: false,
+          });
+
+          let joystickMoved = false;
+          const fallbackTimer = setTimeout(() => {
+            if (!joystickMoved) {
+              manager.destroy();
+              enableArrowPad();
+              setupArrowPadEvents();
+            }
+          }, 2500); // 2.5 s to prove working
+
+          manager.on('start', () => joystickDiv.classList.add('active'));
+          manager.on('end', () => {
+            joystickDiv.classList.remove('active');
+            sendButtonInput('MoveCar', '0');
+          });
+
+          manager.on('dir', (_, data) => {
+            joystickMoved = true; // joystick works
+            const angle = data.direction.angle;
+            const map = { up: '1', down: '2', left: '3', right: '4' };
+            sendButtonInput('MoveCar', map[angle] ?? '0');
+          });
+        } catch (e) {
+          console.error('Joystick failed, using arrows', e);
+          enableArrowPad();
+          setupArrowPadEvents();
+        }
+      }
+
+      window.addEventListener('DOMContentLoaded', () => {
+        initSockets();
+        setupJoystick();
+
+        // Keyboard fallback (desktop testing)
+        window.addEventListener('keydown', e => {
+          const m = { ArrowUp: '1', ArrowDown: '2', ArrowLeft: '3', ArrowRight: '4' };
+          if (m[e.key]) sendButtonInput('MoveCar', m[e.key]);
+        });
+        window.addEventListener('keyup', e => {
+          if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) sendButtonInput('MoveCar', '0');
+        });
+      });
     </script>
-  </body>    
+  </body>
 </html>
 )HTMLHOMEPAGE";
 
